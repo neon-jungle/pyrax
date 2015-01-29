@@ -17,8 +17,7 @@
 #    under the License.
 
 
-from __future__ import print_function
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function, unicode_literals
 import datetime
 from functools import wraps
 import hashlib
@@ -61,6 +60,7 @@ MAX_BULK_DELETE = 10000
 class Fault_cls(object):
     def __nonzero__(self):
         return False
+    __bool__ = __nonzero__
 
 FAULT = Fault_cls()
 
@@ -1121,15 +1121,16 @@ class ContainerManager(BaseManager):
         path_parts = (mgt_url[start:], cname, oname)
         cleaned = (part.strip("/\\") for part in path_parts)
         pth = "/%s" % "/".join(cleaned)
-        if isinstance(pth, six.string_types):
-            pth = pth.encode(pyrax.get_encoding())
         expires = int(time.time() + int(seconds))
         hmac_body = "%s\n%s\n%s" % (mod_method, expires, pth)
         try:
-            sig = hmac.new(key, hmac_body, hashlib.sha1).hexdigest()
-        except TypeError as e:
+            pth.encode("ascii")
+            key = key.encode("ascii")
+            hmac_body = hmac_body.encode("ascii")
+        except UnicodeEncodeError:
             raise exc.UnicodePathError("Due to a bug in Python, the TempURL "
                     "function only works with ASCII object paths.")
+        sig = hmac.new(key, hmac_body, hashlib.sha1).hexdigest()
         temp_url = "%s%s?temp_url_sig=%s&temp_url_expires=%s" % (base_url, pth,
                 sig, expires)
         return temp_url
@@ -1895,7 +1896,7 @@ class StorageObjectManager(BaseManager):
                 fsize = get_file_size(content)
             else:
                 fsize = content_length
-        if fsize <= MAX_FILE_SIZE:
+        if fsize is None or fsize <= MAX_FILE_SIZE:
             # We can just upload it as-is.
             return self._store_object(obj_name, content=content, etag=etag,
                     chunked=chunked, chunk_size=chunk_size, headers=headers)
@@ -2827,7 +2828,7 @@ class StorageClient(BaseClient):
                     if self.count > self.interval:
                         self.count = 0
                         print(".")
-                ret = self.gen.next()
+                ret = next(self.gen)
                 self.processed += len(ret)
                 return ret
 
@@ -3277,7 +3278,7 @@ class FolderUploader(threading.Thread):
         return os.path.basename(pth.rstrip(os.sep))
 
 
-    def upload_files_in_folder(self, arg, dirname, fnames):
+    def upload_files_in_folder(self, dirname, fnames):
         """Handles the iteration across files within a folder."""
         if utils.match_pattern(dirname, self.ignore):
             return False
@@ -3287,9 +3288,6 @@ class FolderUploader(threading.Thread):
             if self.client._should_abort_folder_upload(self.upload_key):
                 return
             full_path = os.path.join(dirname, fname)
-            if os.path.isdir(full_path):
-                # Skip folders; os.walk will include them in the next pass.
-                continue
             obj_name = os.path.relpath(full_path, self.root_folder)
             obj_size = os.stat(full_path).st_size
             self.client.upload_file(self.container, full_path,
@@ -3301,8 +3299,8 @@ class FolderUploader(threading.Thread):
         """Starts the uploading thread."""
         root_path, folder_name = os.path.split(self.root_folder)
         self.root_folder = os.path.join(root_path, folder_name)
-        os.path.walk(self.root_folder, self.upload_files_in_folder, None)
-
+        for dirname, _, fnames in os.walk(self.root_folder):
+            self.upload_files_in_folder(dirname, fnames)
 
 
 class BulkDeleter(threading.Thread):
