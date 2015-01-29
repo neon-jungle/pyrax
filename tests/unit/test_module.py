@@ -1,11 +1,13 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import, print_function, unicode_literals
 
 import json
 import os
 import unittest
 import warnings
 
+import six
 from six.moves import reload_module as reload
 
 from mock import patch
@@ -257,7 +259,7 @@ class PyraxInitTest(unittest.TestCase):
 
     def test_set_credential_file(self):
         with utils.SelfDeletingTempfile() as tmpname:
-            with open(tmpname, "wb") as tmp:
+            with open(tmpname, "w") as tmp:
                 tmp.write("[keystone]\n")
                 tmp.write("username = %s\n" % self.username)
                 tmp.write("password = %s\n" % self.password)
@@ -270,10 +272,10 @@ class PyraxInitTest(unittest.TestCase):
     def test_set_bad_credential_file(self):
         with utils.SelfDeletingTempfile() as tmpname:
             with open(tmpname, "wb") as tmp:
-                tmp.write("[keystone]\n")
-                tmp.write("username = bad\n")
-                tmp.write("password = creds\n")
-                tmp.write("tenant_id = stuff\n")
+                tmp.write(b"[keystone]\n")
+                tmp.write(b"username = bad\n")
+                tmp.write(b"password = creds\n")
+                tmp.write(b"tenant_id = stuff\n")
             self.assertRaises(exc.AuthenticationFailed,
                     pyrax.set_credential_file, tmpname)
         self.assertFalse(pyrax.identity.authenticated)
@@ -488,8 +490,8 @@ class PyraxInitTest(unittest.TestCase):
         pyrax.get_setting = sav
 
     def test_import_fail(self):
-        import __builtin__
-        sav_import = __builtin__.__import__
+        _builtin = six.moves.builtins
+        sav_import = _builtin.__import__
 
         def fake_import(nm, *args):
             if nm == "identity":
@@ -497,9 +499,9 @@ class PyraxInitTest(unittest.TestCase):
             else:
                 return sav_import(nm, *args)
 
-        __builtin__.__import__ = fake_import
+        _builtin.__import__ = fake_import
         self.assertRaises(ImportError, reload, pyrax)
-        __builtin__.__import__ = sav_import
+        _builtin.__import__ = sav_import
         reload(pyrax)
 
 
